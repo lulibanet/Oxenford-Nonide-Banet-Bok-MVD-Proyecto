@@ -1,0 +1,120 @@
+---
+title: "Oxenford-Nonide-Banet-Bok-MVD-Proyecto"
+author: "Violeta Oxenford, Francesca Nonide, Anastasia Bok, Lucila Banet"
+format: html
+---
+## TITULO
+El objetivo del presente trabajo es abordar los factores que influyen sobre la probabilidad de recibir la Asignación Universal por Hijo (AUH) dentro de la población elegible. 
+
+## Librerías
+```{r, message=FALSE, warning=FALSE}
+# Tidyverse para usar sus funciones (EJ: para cambiar el formato de las tablas)
+library(tidyverse) 
+# Janitor para la función cleannames()
+library(janitor)
+# Here para las rutas relativas
+library(here)
+# Openxlsx para leer el excel
+library(openxlsx)
+# Ggplot2 para hacer gráficos
+library(ggplot2)
+```
+
+## Carga de datos
+```{r}
+EPH_individual <- read.xlsx(here("Data","usu_individual_T325.xlsx"))
+
+EPH_hogar <- read.xlsx(here("Data","usu_hogar_T325.xlsx"))
+```
+
+## Detectar si efectivamente hay variabilidad entre conglomerados
+```{r}
+EPH_hogar <- EPH_hogar %>% mutate(
+  V5_01 = ifelse(V5_01== 1, 1, 0)
+)
+
+EPH_hogar <- EPH_hogar %>%
+  mutate(AGLOMERADO = case_when(
+    AGLOMERADO == 2  ~ "Gran La Plata",
+    AGLOMERADO == 3  ~ "Bahía Blanca-Cerri",
+    AGLOMERADO == 4  ~ "Gran Rosario",
+    AGLOMERADO == 5  ~ "Gran Santa Fe",
+    AGLOMERADO == 6  ~ "Gran Paraná",
+    AGLOMERADO == 7  ~ "Posadas",
+    AGLOMERADO == 8  ~ "Gran Resistencia",
+    AGLOMERADO == 9  ~ "Comodoro Rivadavia-Rada Tilly",
+    AGLOMERADO == 10 ~ "Gran Mendoza",
+    AGLOMERADO == 12 ~ "Corrientes",
+    AGLOMERADO == 13 ~ "Gran Córdoba",
+    AGLOMERADO == 14 ~ "Concordia",
+    AGLOMERADO == 15 ~ "Formosa",
+    AGLOMERADO == 17 ~ "Neuquén-Plottier",
+    AGLOMERADO == 18 ~ "Santiago del Estero-La Banda",
+    AGLOMERADO == 19 ~ "Jujuy-Palpala",
+    AGLOMERADO == 20 ~ "Río Gallegos",
+    AGLOMERADO == 22 ~ "Gran Catamarca",
+    AGLOMERADO == 23 ~ "Gran Salta",
+    AGLOMERADO == 25 ~ "La Rioja",
+    AGLOMERADO == 26 ~ "Gran San Luis",
+    AGLOMERADO == 27 ~ "Gran San Juan",
+    AGLOMERADO == 29 ~ "Gran Tucumán-Tafí Viejo",
+    AGLOMERADO == 30 ~ "Santa Rosa-Toay",
+    AGLOMERADO == 31 ~ "Ushuaia-Río Grande",
+    AGLOMERADO == 32 ~ "CABA",
+    AGLOMERADO == 33 ~ "Partidos del Gran Buenos Aires",
+    AGLOMERADO == 34 ~ "Mar del Plata",
+    AGLOMERADO == 36 ~ "Río Cuarto",
+    AGLOMERADO == 38 ~ "San Nicolás-Villa Constitución",
+    AGLOMERADO == 91 ~ "Rawson-Trelew",
+    AGLOMERADO == 93 ~ "Viedma-Carmen de Patagones",
+    AGLOMERADO == 40 ~ "Resto Buenos Aires",
+    AGLOMERADO == 41 ~ "Resto Catamarca",
+    AGLOMERADO == 42 ~ "Resto Córdoba",
+    AGLOMERADO == 43 ~ "Resto Corrientes",
+    AGLOMERADO == 44 ~ "Resto Chaco",
+    AGLOMERADO == 45 ~ "Resto Chubut",
+    AGLOMERADO == 46 ~ "Resto Entre Ríos",
+    AGLOMERADO == 47 ~ "Resto Formosa",
+    AGLOMERADO == 48 ~ "Resto Jujuy",
+    AGLOMERADO == 49 ~ "Resto La Pampa",
+    AGLOMERADO == 50 ~ "Resto La Rioja",
+    AGLOMERADO == 51 ~ "Resto Mendoza",
+    AGLOMERADO == 52 ~ "Resto Misiones",
+    AGLOMERADO == 53 ~ "Resto Neuquén",
+    AGLOMERADO == 54 ~ "Resto Río Negro",
+    AGLOMERADO == 55 ~ "Resto Salta",
+    AGLOMERADO == 56 ~ "Resto San Juan",
+    AGLOMERADO == 57 ~ "Resto San Luis",
+    AGLOMERADO == 58 ~ "Resto Santa Cruz",
+    AGLOMERADO == 60 ~ "Resto Santa Fe",
+    AGLOMERADO == 61 ~ "Resto Santiago del Estero",
+    AGLOMERADO == 62 ~ "Resto Tucumán",
+    TRUE ~ NA_character_
+  ))
+
+tabla_provincia <- EPH_hogar %>%
+  group_by(AGLOMERADO) %>%
+  summarise(
+    Observaciones = n(),
+    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA, na.rm = TRUE) * 100
+  ) %>%
+  arrange(desc(Cobertura_auh))
+
+grafico_cobertura <- ggplot(tabla_provincia, aes(x = reorder(AGLOMERADO, Cobertura_auh), y = Cobertura_auh)) +
+  geom_point(size = 3) +
+  coord_flip() +
+  labs(
+    title = "Cobertura de AUH por aglomerado",
+    x = "Aglomerado",
+    y = "Cobertura AUH (%)"
+  ) +
+  theme_minimal()
+
+grafico_cobertura
+
+```
+
+## Unir las bases de datos
+```{r}
+datos <- EPH_individual %>% left_join(EPH_hogar, by = c("CODUSU","NRO_HOGAR"))
+```
