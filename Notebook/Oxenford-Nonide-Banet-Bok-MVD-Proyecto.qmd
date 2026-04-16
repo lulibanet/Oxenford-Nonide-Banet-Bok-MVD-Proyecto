@@ -10,8 +10,6 @@ El objetivo del presente trabajo es abordar los factores que influyen sobre la p
 ```{r, message=FALSE, warning=FALSE}
 # Tidyverse para usar sus funciones (EJ: para cambiar el formato de las tablas)
 library(tidyverse) 
-# Janitor para la función cleannames()
-library(janitor)
 # Here para las rutas relativas
 library(here)
 # Openxlsx para leer el excel
@@ -22,9 +20,21 @@ library(ggplot2)
 
 ## Carga de datos
 ```{r}
-EPH_individual <- read.xlsx(here("Data","usu_individual_T325.xlsx"))
+# Unzip todos los datos
+unzip(here("Data", "usu_individual_T125.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_individual_T225.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_individual_T325.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_hogar_T125.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_hogar_T225.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_hogar_T325.xlsx.zip"), exdir = "Data")
 
-EPH_hogar <- read.xlsx(here("Data","usu_hogar_T325.xlsx"))
+EPH_individual_T1 <- read.xlsx(here("Data","usu_individual_T125.xlsx"))
+EPH_individual_T2 <- read.xlsx(here("Data","usu_individual_T225.xlsx"))
+EPH_individual_T3 <- read.xlsx(here("Data","usu_individual_T325.xlsx"))
+
+EPH_hogar_T1 <- read.xlsx(here("Data","usu_hogar_T125.xlsx"))
+EPH_hogar_T2 <- read.xlsx(here("Data","usu_hogar_T225.xlsx"))
+EPH_hogar_T3 <- read.xlsx(here("Data","usu_hogar_T325.xlsx"))
 ```
 
 ## Detectar si efectivamente hay variabilidad entre conglomerados
