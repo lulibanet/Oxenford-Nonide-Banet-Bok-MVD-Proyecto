@@ -59,7 +59,7 @@ trimestre3 <- trimestre3 %>% mutate(CH05 = as.character(CH05))
 datos <- bind_rows(trimestre1, trimestre2, trimestre3)
 ```
 
-## Detectar si efectivamente hay variabilidad entre conglomerados
+## Detectar si efectivamente hay variabilidad entre aglomerados
 ```{r}
 datos <- datos %>% mutate(
   V5_01 = ifelse(V5_01== 1, 1, 0)
@@ -128,7 +128,7 @@ tabla_provincia <- datos %>%
   group_by(AGLOMERADO.x) %>%
   summarise(
     Observaciones = n(),
-    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100
+    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100 # Ponderado
   ) %>%
   arrange(desc(Cobertura_auh))
 
@@ -146,3 +146,52 @@ grafico_cobertura
 
 ```
 
+## Filtramos la muestra por individuos elegibles
+```{r}
+# Variable para determinar si es menor
+datos <- datos %>%
+  mutate(menor = ifelse(as.numeric(CH06) < 18, 1, 0))
+
+# Variable para determinar si es menor y no trabaja y otra variable para 
+# determinar si es jefe de hogar
+datos <- datos %>%
+  mutate(menor_no_trabaja = ifelse(menor == 1 & as.numeric(ESTADO) %in% c(3, 4), 1, 0),
+         jefe = ifelse(CH03 == 1, 1, 0))
+
+# Variable para determinar si es menor, no trabaja y no recibe otro beneficio formal
+datos <- datos %>% mutate(
+  menor_elegible = ifelse(menor_no_trabaja == 1 & V5_02 == 2, 1, 0)
+)
+
+# Variable para determinar si es un jefe de hogar elegible
+datos <- datos %>%
+  mutate(jefe_elegible = ifelse(jefe == 1 & (
+    ESTADO == 2 | # Desempleado
+    EMPLEO == 2 | # Informal
+    SECTOR == 3 # Trabajador doméstico
+  ), 1, 0),
+    jefe_elegible = ifelse(is.na(jefe_elegible), 0, jefe_elegible) # Que tome los NAs como FALSE
+  )
+
+# Creación de dataframe con hogares elegibles: hogares con menores que no trabajan
+# y jefes elegibles
+hogares <- datos %>%
+  group_by(CODUSU, NRO_HOGAR, trimestre_base) %>%
+  summarise(
+    menor_elegible_hogar = max(menor_elegible, na.rm = TRUE), # Uso max porque toma si hay al menos uno
+    jefe_elegible_hogar = max(jefe_elegible, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate( # Ver si el hogar es elegible o no
+    elegible = ifelse(menor_elegible_hogar == 1 & jefe_elegible_hogar == 1, 1, 0)
+  )
+
+# Le agrego a los hogares correctos (por trimestre, código de usuario y 
+# número de hogar) su "elegibilidad" correspondiente
+datos <- datos %>%
+  left_join(hogares, by = c("CODUSU", "NRO_HOGAR", "trimestre_base"))
+
+# Creo una muestra solamente con las personas elegibles
+datos_elegibles <- datos %>%
+  filter(elegible == 1)
+```
