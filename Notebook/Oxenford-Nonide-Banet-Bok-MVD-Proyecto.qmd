@@ -21,12 +21,12 @@ library(ggplot2)
 ## Carga de datos
 ```{r}
 # Unzip todos los datos
-unzip(here("Data", "usu_individual_T125.xlsx.zip"), exdir = "Data")
-unzip(here("Data", "usu_individual_T225.xlsx.zip"), exdir = "Data")
-unzip(here("Data", "usu_individual_T325.xlsx.zip"), exdir = "Data")
-unzip(here("Data", "usu_hogar_T125.xlsx.zip"), exdir = "Data")
-unzip(here("Data", "usu_hogar_T225.xlsx.zip"), exdir = "Data")
-unzip(here("Data", "usu_hogar_T325.xlsx.zip"), exdir = "Data")
+unzip(here("Data", "usu_individual_T125.xlsx.zip"), exdir = here("Data"))
+unzip(here("Data", "usu_individual_T225.xlsx.zip"), exdir = here("Data"))
+unzip(here("Data", "usu_individual_T325.xlsx.zip"), exdir = here("Data"))
+unzip(here("Data", "usu_hogar_T125.xlsx.zip"), exdir = here("Data"))
+unzip(here("Data", "usu_hogar_T225.xlsx.zip"), exdir = here("Data"))
+unzip(here("Data", "usu_hogar_T325.xlsx.zip"), exdir = here("Data"))
 
 EPH_individual_T1 <- read.xlsx(here("Data","usu_individual_T125.xlsx"))
 EPH_individual_T2 <- read.xlsx(here("Data","usu_individual_T225.xlsx"))
@@ -37,80 +37,102 @@ EPH_hogar_T2 <- read.xlsx(here("Data","usu_hogar_T225.xlsx"))
 EPH_hogar_T3 <- read.xlsx(here("Data","usu_hogar_T325.xlsx"))
 ```
 
+## Unir las bases de datos
+```{r}
+trimestre1  <- EPH_individual_T1 %>% left_join(
+  EPH_hogar_T1, by = c("CODUSU", "NRO_HOGAR"))
+
+trimestre2  <- EPH_individual_T2 %>% left_join(
+  EPH_hogar_T2, by = c("CODUSU", "NRO_HOGAR"))
+
+trimestre3  <- EPH_individual_T3 %>% left_join(
+  EPH_hogar_T3, by = c("CODUSU", "NRO_HOGAR"))
+
+trimestre1 <- trimestre1 %>% mutate(trimestre_base = "2025_T1")
+trimestre2 <- trimestre2 %>% mutate(trimestre_base = "2025_T2")
+trimestre3 <- trimestre3 %>% mutate(trimestre_base = "2025_T3")
+
+trimestre1 <- trimestre1 %>% mutate(CH05 = as.character(CH05))
+trimestre2 <- trimestre2 %>% mutate(CH05 = as.character(CH05))
+trimestre3 <- trimestre3 %>% mutate(CH05 = as.character(CH05))
+
+datos <- bind_rows(trimestre1, trimestre2, trimestre3)
+```
+
 ## Detectar si efectivamente hay variabilidad entre conglomerados
 ```{r}
-EPH_hogar <- EPH_hogar %>% mutate(
+datos <- datos %>% mutate(
   V5_01 = ifelse(V5_01== 1, 1, 0)
 )
 
-EPH_hogar <- EPH_hogar %>%
-  mutate(AGLOMERADO = case_when(
-    AGLOMERADO == 2  ~ "Gran La Plata",
-    AGLOMERADO == 3  ~ "Bahía Blanca-Cerri",
-    AGLOMERADO == 4  ~ "Gran Rosario",
-    AGLOMERADO == 5  ~ "Gran Santa Fe",
-    AGLOMERADO == 6  ~ "Gran Paraná",
-    AGLOMERADO == 7  ~ "Posadas",
-    AGLOMERADO == 8  ~ "Gran Resistencia",
-    AGLOMERADO == 9  ~ "Comodoro Rivadavia-Rada Tilly",
-    AGLOMERADO == 10 ~ "Gran Mendoza",
-    AGLOMERADO == 12 ~ "Corrientes",
-    AGLOMERADO == 13 ~ "Gran Córdoba",
-    AGLOMERADO == 14 ~ "Concordia",
-    AGLOMERADO == 15 ~ "Formosa",
-    AGLOMERADO == 17 ~ "Neuquén-Plottier",
-    AGLOMERADO == 18 ~ "Santiago del Estero-La Banda",
-    AGLOMERADO == 19 ~ "Jujuy-Palpala",
-    AGLOMERADO == 20 ~ "Río Gallegos",
-    AGLOMERADO == 22 ~ "Gran Catamarca",
-    AGLOMERADO == 23 ~ "Gran Salta",
-    AGLOMERADO == 25 ~ "La Rioja",
-    AGLOMERADO == 26 ~ "Gran San Luis",
-    AGLOMERADO == 27 ~ "Gran San Juan",
-    AGLOMERADO == 29 ~ "Gran Tucumán-Tafí Viejo",
-    AGLOMERADO == 30 ~ "Santa Rosa-Toay",
-    AGLOMERADO == 31 ~ "Ushuaia-Río Grande",
-    AGLOMERADO == 32 ~ "CABA",
-    AGLOMERADO == 33 ~ "Partidos del Gran Buenos Aires",
-    AGLOMERADO == 34 ~ "Mar del Plata",
-    AGLOMERADO == 36 ~ "Río Cuarto",
-    AGLOMERADO == 38 ~ "San Nicolás-Villa Constitución",
-    AGLOMERADO == 91 ~ "Rawson-Trelew",
-    AGLOMERADO == 93 ~ "Viedma-Carmen de Patagones",
-    AGLOMERADO == 40 ~ "Resto Buenos Aires",
-    AGLOMERADO == 41 ~ "Resto Catamarca",
-    AGLOMERADO == 42 ~ "Resto Córdoba",
-    AGLOMERADO == 43 ~ "Resto Corrientes",
-    AGLOMERADO == 44 ~ "Resto Chaco",
-    AGLOMERADO == 45 ~ "Resto Chubut",
-    AGLOMERADO == 46 ~ "Resto Entre Ríos",
-    AGLOMERADO == 47 ~ "Resto Formosa",
-    AGLOMERADO == 48 ~ "Resto Jujuy",
-    AGLOMERADO == 49 ~ "Resto La Pampa",
-    AGLOMERADO == 50 ~ "Resto La Rioja",
-    AGLOMERADO == 51 ~ "Resto Mendoza",
-    AGLOMERADO == 52 ~ "Resto Misiones",
-    AGLOMERADO == 53 ~ "Resto Neuquén",
-    AGLOMERADO == 54 ~ "Resto Río Negro",
-    AGLOMERADO == 55 ~ "Resto Salta",
-    AGLOMERADO == 56 ~ "Resto San Juan",
-    AGLOMERADO == 57 ~ "Resto San Luis",
-    AGLOMERADO == 58 ~ "Resto Santa Cruz",
-    AGLOMERADO == 60 ~ "Resto Santa Fe",
-    AGLOMERADO == 61 ~ "Resto Santiago del Estero",
-    AGLOMERADO == 62 ~ "Resto Tucumán",
+datos <- datos %>%
+  mutate(AGLOMERADO.x = case_when(
+    AGLOMERADO.x == 2  ~ "Gran La Plata",
+    AGLOMERADO.x == 3  ~ "Bahía Blanca-Cerri",
+    AGLOMERADO.x == 4  ~ "Gran Rosario",
+    AGLOMERADO.x == 5  ~ "Gran Santa Fe",
+    AGLOMERADO.x == 6  ~ "Gran Paraná",
+    AGLOMERADO.x == 7  ~ "Posadas",
+    AGLOMERADO.x == 8  ~ "Gran Resistencia",
+    AGLOMERADO.x == 9  ~ "Comodoro Rivadavia-Rada Tilly",
+    AGLOMERADO.x == 10 ~ "Gran Mendoza",
+    AGLOMERADO.x == 12 ~ "Corrientes",
+    AGLOMERADO.x == 13 ~ "Gran Córdoba",
+    AGLOMERADO.x == 14 ~ "Concordia",
+    AGLOMERADO.x == 15 ~ "Formosa",
+    AGLOMERADO.x == 17 ~ "Neuquén-Plottier",
+    AGLOMERADO.x == 18 ~ "Santiago del Estero-La Banda",
+    AGLOMERADO.x == 19 ~ "Jujuy-Palpala",
+    AGLOMERADO.x == 20 ~ "Río Gallegos",
+    AGLOMERADO.x == 22 ~ "Gran Catamarca",
+    AGLOMERADO.x == 23 ~ "Gran Salta",
+    AGLOMERADO.x == 25 ~ "La Rioja",
+    AGLOMERADO.x == 26 ~ "Gran San Luis",
+    AGLOMERADO.x == 27 ~ "Gran San Juan",
+    AGLOMERADO.x == 29 ~ "Gran Tucumán-Tafí Viejo",
+    AGLOMERADO.x == 30 ~ "Santa Rosa-Toay",
+    AGLOMERADO.x == 31 ~ "Ushuaia-Río Grande",
+    AGLOMERADO.x == 32 ~ "CABA",
+    AGLOMERADO.x == 33 ~ "Partidos del Gran Buenos Aires",
+    AGLOMERADO.x == 34 ~ "Mar del Plata",
+    AGLOMERADO.x == 36 ~ "Río Cuarto",
+    AGLOMERADO.x == 38 ~ "San Nicolás-Villa Constitución",
+    AGLOMERADO.x == 91 ~ "Rawson-Trelew",
+    AGLOMERADO.x == 93 ~ "Viedma-Carmen de Patagones",
+    AGLOMERADO.x == 40 ~ "Resto Buenos Aires",
+    AGLOMERADO.x == 41 ~ "Resto Catamarca",
+    AGLOMERADO.x == 42 ~ "Resto Córdoba",
+    AGLOMERADO.x == 43 ~ "Resto Corrientes",
+    AGLOMERADO.x == 44 ~ "Resto Chaco",
+    AGLOMERADO.x == 45 ~ "Resto Chubut",
+    AGLOMERADO.x == 46 ~ "Resto Entre Ríos",
+    AGLOMERADO.x == 47 ~ "Resto Formosa",
+    AGLOMERADO.x == 48 ~ "Resto Jujuy",
+    AGLOMERADO.x == 49 ~ "Resto La Pampa",
+    AGLOMERADO.x == 50 ~ "Resto La Rioja",
+    AGLOMERADO.x == 51 ~ "Resto Mendoza",
+    AGLOMERADO.x == 52 ~ "Resto Misiones",
+    AGLOMERADO.x == 53 ~ "Resto Neuquén",
+    AGLOMERADO.x == 54 ~ "Resto Río Negro",
+    AGLOMERADO.x == 55 ~ "Resto Salta",
+    AGLOMERADO.x == 56 ~ "Resto San Juan",
+    AGLOMERADO.x == 57 ~ "Resto San Luis",
+    AGLOMERADO.x == 58 ~ "Resto Santa Cruz",
+    AGLOMERADO.x == 60 ~ "Resto Santa Fe",
+    AGLOMERADO.x == 61 ~ "Resto Santiago del Estero",
+    AGLOMERADO.x == 62 ~ "Resto Tucumán",
     TRUE ~ NA_character_
   ))
 
-tabla_provincia <- EPH_hogar %>%
-  group_by(AGLOMERADO) %>%
+tabla_provincia <- datos %>%
+  group_by(AGLOMERADO.x) %>%
   summarise(
     Observaciones = n(),
-    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA, na.rm = TRUE) * 100
+    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100
   ) %>%
   arrange(desc(Cobertura_auh))
 
-grafico_cobertura <- ggplot(tabla_provincia, aes(x = reorder(AGLOMERADO, Cobertura_auh), y = Cobertura_auh)) +
+grafico_cobertura <- ggplot(tabla_provincia, aes(x = reorder(AGLOMERADO.x, Cobertura_auh), y = Cobertura_auh)) +
   geom_point(size = 3) +
   coord_flip() +
   labs(
@@ -124,7 +146,3 @@ grafico_cobertura
 
 ```
 
-## Unir las bases de datos
-```{r}
-datos <- EPH_individual %>% left_join(EPH_hogar, by = c("CODUSU","NRO_HOGAR"))
-```

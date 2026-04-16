@@ -35,3 +35,7 @@ po/*~
 rsconnect/
 .DS_Store
 ._DS_Store
+# Mac OS unzip junk
+__MACOSX/
+*/__MACOSX/
+._*
