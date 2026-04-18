@@ -3,7 +3,7 @@ title: "Oxenford-Nonide-Banet-Bok-MVD-Proyecto"
 author: "Violeta Oxenford, Francesca Nonide, Anastasia Bok, Lucila Banet"
 format: html
 ---
-## TITULO
+## Cobertura de la AUH: ¿realmente es universal?
 El objetivo del presente trabajo es abordar los factores que influyen sobre la probabilidad de recibir la Asignación Universal por Hijo (AUH) dentro de la población elegible. 
 
 ## Librerías
@@ -16,9 +16,13 @@ library(here)
 library(openxlsx)
 # Ggplot2 para hacer gráficos
 library(ggplot2)
+# Patchwork para unir los gráficos
+library(patchwork)
 ```
 
 ## Carga de datos
+Primero debemos unzippear los archivos zip para extraer las bases de datos.
+Luego, almacenamos los datos de cada uno de los archivos en objetos.
 ```{r}
 # Unzip todos los datos
 unzip(here("Data", "usu_individual_T125.xlsx.zip"), exdir = here("Data"))
@@ -38,6 +42,8 @@ EPH_hogar_T3 <- read.xlsx(here("Data","usu_hogar_T325.xlsx"))
 ```
 
 ## Unir las bases de datos
+Unimos las bases de datos a partir del código de usuario y el número de hogar. Y unimos
+los tres trimestres. 
 ```{r}
 trimestre1  <- EPH_individual_T1 %>% left_join(
   EPH_hogar_T1, by = c("CODUSU", "NRO_HOGAR"))
@@ -52,6 +58,7 @@ trimestre1 <- trimestre1 %>% mutate(trimestre_base = "2025_T1")
 trimestre2 <- trimestre2 %>% mutate(trimestre_base = "2025_T2")
 trimestre3 <- trimestre3 %>% mutate(trimestre_base = "2025_T3")
 
+# Uniformo la interpretación de la variable CH05 para poder unir las tablas
 trimestre1 <- trimestre1 %>% mutate(CH05 = as.character(CH05))
 trimestre2 <- trimestre2 %>% mutate(CH05 = as.character(CH05))
 trimestre3 <- trimestre3 %>% mutate(CH05 = as.character(CH05))
@@ -59,12 +66,53 @@ trimestre3 <- trimestre3 %>% mutate(CH05 = as.character(CH05))
 datos <- bind_rows(trimestre1, trimestre2, trimestre3)
 ```
 
-## Detectar si efectivamente hay variabilidad entre aglomerados
+## Filtramos la muestra por individuos elegibles
+Filtramos la base a partir de quienes son elegibles para recibir la AUH: aquellos que (1) tengan un hijo menor a 18 años que no esté empleado ni reciba otro beneficio social formal y (2) tengan un jefe de hogar que se encuentra desempleado, con trabajo informal o trabajo doméstico que no reciba jubilación.
 ```{r}
+# Variable para determinar si es menor
+datos <- datos %>%
+  mutate(menor = ifelse(as.numeric(CH06) < 18, 1, 0))
+
+# Variable para determinar si es menor y no trabaja y otra variable para 
+# determinar si es jefe de hogar
+datos <- datos %>%
+  mutate(menor_no_trabaja = ifelse(menor == 1 & as.numeric(ESTADO) %in% c(3, 4), 1, 0),
+         jefe = ifelse(CH03 == 1, 1, 0))
+
+# Variable para determinar si es menor, no trabaja y no recibe otro beneficio formal
 datos <- datos %>% mutate(
-  V5_01 = ifelse(V5_01== 1, 1, 0)
+  menor_elegible = ifelse(menor_no_trabaja == 1 & V5_02 == 2, 1, 0)
 )
 
+# Variable para determinar si es un jefe de hogar elegible
+datos <- datos %>%
+  mutate(jefe_elegible = ifelse(jefe == 1 & (
+    ESTADO == 2 | # Desempleado
+    EMPLEO == 2 | # Informal
+    SECTOR == 3 # Trabajador doméstico
+  ), 1, 0),
+    jefe_elegible = ifelse(is.na(jefe_elegible), 0, jefe_elegible) # Que tome los NAs como FALSE
+  )
+
+# Creación de dataframe con hogares elegibles: hogares con menores que no trabajan
+# y jefes elegibles
+hogares <- datos %>%
+  group_by(CODUSU, NRO_HOGAR, trimestre_base) %>%
+  summarise(
+    menor_elegible_hogar = max(menor_elegible, na.rm = TRUE), # Uso max porque toma si hay al menos uno
+    jefe_elegible_hogar = max(jefe_elegible, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate( # Ver si el hogar es elegible o no
+    elegible = ifelse(menor_elegible_hogar == 1 & jefe_elegible_hogar == 1, 1, 0)
+  )
+
+# Le agrego a los hogares correctos (por trimestre, código de usuario y 
+# número de hogar) su "elegibilidad" correspondiente
+datos <- datos %>%
+  left_join(hogares, by = c("CODUSU", "NRO_HOGAR", "trimestre_base"))
+
+# Modifico algunas variables para ambas bases de datos
 datos <- datos %>%
   mutate(AGLOMERADO.x = case_when(
     AGLOMERADO.x == 2  ~ "Gran La Plata",
@@ -124,7 +172,69 @@ datos <- datos %>%
     TRUE ~ NA_character_
   ))
 
-tabla_provincia <- datos %>%
+datos <- datos %>% mutate(
+  V5_01 = ifelse(V5_01== 1, 1, 0) # Variable binaria para recepción de AUH
+)
+
+# Creo una muestra solamente con las personas elegibles
+datos_elegibles <- datos %>%
+  filter(elegible == 1)
+```
+
+## Estadística descriptiva
+Comenzamos por describir la muestra antes y después del filtrado. Primero, abordamos la cantidad de observaciones por aglomerado. 
+```{r}
+# Descripción de la muestra total (elegibles y no elegibles) por aglomerado
+tabla_aglomerado_todos <- datos %>%
+  count(AGLOMERADO.x, name = "n")
+
+grafico_aglomerado_todos <- ggplot(tabla_aglomerado_todos, aes(x = reorder(AGLOMERADO.x, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Muestra completa: cantidad de observaciones por aglomerado",
+    x = "Aglomerado",
+    y = "Cantidad de observaciones"
+  ) +
+  theme_minimal()
+
+# Descripción de la muestra de individuos elegibles por aglomerado
+tabla_aglomerado_elegibles <- datos_elegibles %>%
+  count(AGLOMERADO.x, name = "n")
+
+grafico_aglomerado_elegibles <- ggplot(tabla_aglomerado_elegibles, aes(x = reorder(AGLOMERADO.x, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Muestra de elegibles: cantidad de observaciones por aglomerado",
+    x = "Aglomerado",
+    y = "Cantidad de observaciones"
+  ) +
+  theme_minimal()
+
+# Imprimo a ambos juntos
+grafico_combinado <- grafico_aglomerado_todos + grafico_aglomerado_elegibles +
+  plot_annotation(
+    title = "Distribución de observaciones por aglomerado",
+    subtitle = "Muestra total vs muestra de elegibles"
+  )
+
+print(grafico_combinado)
+
+ggsave(
+  filename = here("Gráficos", "observaciones_aglomerado.png"),
+  plot = grafico_combinado,
+  width = 16,
+  height = 8,
+  dpi = 300
+)
+
+```
+
+Tasa de cobertura de la AUH agrupada por aglomerado aplicada a la muestra de individuos elegibles.
+```{r}
+# Gráfico para la muestra de individuos elegibles
+tabla_cobertura_elegibles <- datos_elegibles %>%
   group_by(AGLOMERADO.x) %>%
   summarise(
     Observaciones = n(),
@@ -132,66 +242,163 @@ tabla_provincia <- datos %>%
   ) %>%
   arrange(desc(Cobertura_auh))
 
-grafico_cobertura <- ggplot(tabla_provincia, aes(x = reorder(AGLOMERADO.x, Cobertura_auh), y = Cobertura_auh)) +
-  geom_point(size = 3) +
+grafico_cobertura_elegibles <- ggplot(
+  tabla_cobertura_elegibles,
+  aes(x = reorder(AGLOMERADO.x, Cobertura_auh),
+      y = Cobertura_auh,
+      fill = Cobertura_auh)
+) +
+  geom_col() +
   coord_flip() +
-  labs(
-    title = "Cobertura de AUH por aglomerado",
-    x = "Aglomerado",
-    y = "Cobertura AUH (%)"
+  geom_text(aes(label = round(Cobertura_auh, 1)),
+            hjust = -0.1,
+            size = 3) +
+  scale_fill_gradient(
+    low = "#C0392B",   # rojo
+    high = "#27AE60"
   ) +
-  theme_minimal()
+  labs(
+    title = "Cobertura de AUH por aglomerado (población elegible)",
+    subtitle = "Mayor cobertura en verde, menor en rojo",
+    x = "Aglomerado",
+    y = "Cobertura AUH (%)",
+    fill = "Cobertura (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(face = "bold")
+  ) +
+  ylim(0, max(tabla_cobertura_elegibles$Cobertura_auh) * 1.1)
 
-grafico_cobertura
+print(grafico_cobertura_elegibles)
+
+ggsave(
+  filename = here("Gráficos", "Gráfico cobertura elegibles.png"),
+  plot = grafico_cobertura_elegibles,
+  width = 16,
+  height = 8,
+  dpi = 300
+)
 
 ```
 
-## Filtramos la muestra por individuos elegibles
+Tasa de cobertura a lo largo de los trimestres de 2025 de la AUH agrupada por aglomerado aplicada a la muestra de individuos elegibles.
 ```{r}
-# Variable para determinar si es menor
-datos <- datos %>%
-  mutate(menor = ifelse(as.numeric(CH06) < 18, 1, 0))
+tabla_longitudinal_elegibles <- datos_elegibles %>%
+  group_by(AGLOMERADO.x, trimestre_base) %>%
+  summarise(
+    cobertura = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100,
+    .groups = "drop"
+  )
 
-# Variable para determinar si es menor y no trabaja y otra variable para 
-# determinar si es jefe de hogar
-datos <- datos %>%
-  mutate(menor_no_trabaja = ifelse(menor == 1 & as.numeric(ESTADO) %in% c(3, 4), 1, 0),
-         jefe = ifelse(CH03 == 1, 1, 0))
+tabla_longitudinal_elegibles <- tabla_longitudinal_elegibles %>%
+  mutate(
+    trimestre_label = case_when(
+      trimestre_base == "2025_T1" ~ "T1",
+      trimestre_base == "2025_T2" ~ "T2",
+      trimestre_base == "2025_T3" ~ "T3"
+    )
+  )
 
-# Variable para determinar si es menor, no trabaja y no recibe otro beneficio formal
-datos <- datos %>% mutate(
-  menor_elegible = ifelse(menor_no_trabaja == 1 & V5_02 == 2, 1, 0)
+grafico_longitudinal_elegibles <- ggplot(
+  tabla_longitudinal_elegibles,
+  aes(x = trimestre_label, y = cobertura, group = 1)
+) +
+  geom_line(
+    linetype = "dashed",
+    color = "grey40",
+    linewidth = 0.6
+  ) +
+  geom_point(
+    aes(color = trimestre_label),
+    size = 2.5
+  ) +
+  facet_wrap(~AGLOMERADO.x, ncol = 5) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = c(0, 25, 50, 75, 100)
+  ) +
+  labs(
+    title = "Evolución de la cobertura de AUH por aglomerado",
+    subtitle = "Población elegible, 2025",
+    x = NULL,
+    y = "Cobertura (%)",
+    color = "Trimestre"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 8, face = "bold"),
+    axis.text.x = element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+print(grafico_longitudinal_elegibles)
+
+ggsave(
+  filename = here("Gráficos", "Gráfico longitudinal de cobertura elegibles.png"),
+  plot = grafico_longitudinal_elegibles,
+  width = 16,
+  height = 10,
+  dpi = 300
 )
 
-# Variable para determinar si es un jefe de hogar elegible
-datos <- datos %>%
-  mutate(jefe_elegible = ifelse(jefe == 1 & (
-    ESTADO == 2 | # Desempleado
-    EMPLEO == 2 | # Informal
-    SECTOR == 3 # Trabajador doméstico
-  ), 1, 0),
-    jefe_elegible = ifelse(is.na(jefe_elegible), 0, jefe_elegible) # Que tome los NAs como FALSE
-  )
+```
 
-# Creación de dataframe con hogares elegibles: hogares con menores que no trabajan
-# y jefes elegibles
-hogares <- datos %>%
-  group_by(CODUSU, NRO_HOGAR, trimestre_base) %>%
+Tabla de exclusión: tasa de personas elegibles excluidas de la AUH agrupada por aglomerado.
+```{r}
+tabla_exclusion <- datos_elegibles %>%
+  group_by(AGLOMERADO.x) %>%
   summarise(
-    menor_elegible_hogar = max(menor_elegible, na.rm = TRUE), # Uso max porque toma si hay al menos uno
-    jefe_elegible_hogar = max(jefe_elegible, na.rm = TRUE),
+    exclusion = weighted.mean(V5_01 != 1, w = PONDERA.x, na.rm = TRUE) * 100,
     .groups = "drop"
   ) %>%
-  mutate( # Ver si el hogar es elegible o no
-    elegible = ifelse(menor_elegible_hogar == 1 & jefe_elegible_hogar == 1, 1, 0)
+  arrange(desc(exclusion))
+
+grafico_exclusion <- ggplot(
+  tabla_exclusion,
+  aes(
+    x = reorder(AGLOMERADO.x, exclusion),
+    y = exclusion,
+    fill = exclusion
   )
+) +
+  geom_col() +
+  coord_flip() +
+  geom_text(
+    aes(label = round(exclusion, 1)),
+    hjust = -0.1,
+    size = 3
+  ) +
+  scale_fill_gradient(
+    low = "#FADBD8",
+    high = "#C0392B"
+  ) +
+  labs(
+    title = "Error de exclusión de la AUH por aglomerado",
+    subtitle = "Mayor exclusión en tonos más intensos",
+    x = "Aglomerado",
+    y = "% de exclusión",
+    fill = "% exclusión"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 8)
+  ) +
+  ylim(0, max(tabla_exclusion$exclusion) * 1.1)
 
-# Le agrego a los hogares correctos (por trimestre, código de usuario y 
-# número de hogar) su "elegibilidad" correspondiente
-datos <- datos %>%
-  left_join(hogares, by = c("CODUSU", "NRO_HOGAR", "trimestre_base"))
+print(grafico_exclusion)
 
-# Creo una muestra solamente con las personas elegibles
-datos_elegibles <- datos %>%
-  filter(elegible == 1)
+ggsave(
+  filename = here("Gráficos", "Gráfico de exclusión elegibles.png"),
+  plot = grafico_exclusion,
+  width = 16,
+  height = 10,
+  dpi = 300
+)
+
 ```
