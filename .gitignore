@@ -39,3 +39,6 @@ rsconnect/
 __MACOSX/
 */__MACOSX/
 ._*
+# Datos pesados
+Data/
+.RDataTmp*

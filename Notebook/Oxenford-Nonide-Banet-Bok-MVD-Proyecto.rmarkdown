@@ -173,9 +173,8 @@ datos <- datos %>%
   ))
 
 datos <- datos %>% mutate(
-  V5_01 = case_when(V5_01 == 1 ~ 1,
-                    V5_01 == 2 ~ 0,
-                    TRUE ~ NA_real_)) # Variable binaria para recepción de AUH
+  V5_01 = ifelse(V5_01== 1, 1, 0) # Variable binaria para recepción de AUH
+)
 
 # Creo una muestra solamente con las personas elegibles
 datos_elegibles <- datos %>%
@@ -225,41 +224,6 @@ print(grafico_combinado)
 ggsave(
   filename = here("Gráficos", "observaciones_aglomerado.png"),
   plot = grafico_combinado,
-  width = 16,
-  height = 8,
-  dpi = 300
-)
-
-```
-
-Porcentaje de NAs por aglomerado dentro de quienes reciben la AUH de la población
-elegible. 
-```{r}
-tabla_na <- datos_elegibles %>%
-  group_by(AGLOMERADO.x) %>%
-  summarise(
-    pct_na = mean(is.na(V5_01)) * 100,
-    .groups = "drop"
-  ) %>%
-  arrange(desc(pct_na))
-
-grafico_NAs <- ggplot(tabla_na, aes(x = reorder(AGLOMERADO.x, pct_na), y = pct_na, fill = pct_na)) +
-  geom_col() +
-  coord_flip() +
-  scale_fill_gradient(low = "#D6EAF8", high = "#1B4F72") +
-  labs(
-    title = "Porcentaje de valores faltantes en AUH por aglomerado",
-    x = "Aglomerado",
-    y = "% de NA",
-    fill = "% NA"
-  ) +
-  theme_minimal()
-
-print(grafico_NAs)
-
-ggsave(
-  filename = here("Gráficos", "grafico_NAs.png"),
-  plot = grafico_NAs,
   width = 16,
   height = 8,
   dpi = 300
