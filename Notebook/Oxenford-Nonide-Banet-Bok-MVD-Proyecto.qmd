@@ -86,20 +86,19 @@ datos <- datos %>%
 
 # Variable para determinar si es un hijo discapacitado
 datos <- datos %>%
-  mutate(discapacitado = ifelse((as.numeric(CAT_INAC) == 6) & 
-                                  (as.numeric(CH12) == 9) &
-                                  (CH03 == 3), 1, 0))
+  mutate(discapacitado = ifelse(((as.numeric(CAT_INAC) == 6)|(as.numeric(CH12) == 9)) 
+                                & (CH03 == 3), 1, 0))
 
 # Variable para determinar si es menor y no trabaja y otra variable para 
 # determinar si es jefe de hogar
 datos <- datos %>%
-  mutate(menor_no_trabaja = ifelse(menor == 1 & as.numeric(ESTADO) %in% c(3, 4), 1, 0),
+  mutate(menor_no_trabaja = ifelse(menor == 1 & as.numeric(ESTADO) %in% c(2, 3, 4), 1, 0),
          jefe = ifelse(CH03 == 1, 1, 0))
 
-# Variable para determinar si es menor, no trabaja
+# Variable para determinar si el menor es elegibe
 datos <- datos %>% mutate(
-  menor_elegible = ifelse(menor_no_trabaja == 1, 1, 0)
-)
+  menor_elegible = ifelse(
+    menor_no_trabaja == 1 & CH03 == 3, 1, 0))
 
 # Variable para determinar si es un jefe de hogar elegible
 datos <- datos %>%
@@ -111,19 +110,49 @@ datos <- datos %>%
     jefe_elegible = ifelse(is.na(jefe_elegible), 0, jefe_elegible) # Que tome los NAs como FALSE
   )
 
+# Variable para determinar si alguien recibe jubilación (si reciben monto de jubilación mayor a 0)
+datos <- datos %>% mutate(
+  recibe_jubilacion_pension = ifelse(
+    coalesce(as.numeric(V2_01_M), 0) > 0 |
+      coalesce(as.numeric(V2_02_M), 0) > 0 |
+      coalesce(as.numeric(V2_03_M), 0) > 0, 1, 0))
+
+# Variable para determinar si el jefe de hogar elegible no recibe jubilación
+datos <- datos %>% mutate(
+  jefe_no_jubilado = ifelse((jefe_elegible == 1) & (recibe_jubilacion_pension == 0), 1, 0)
+)
+
+# Variable binaria para recepción de AUH
+datos <- datos %>% mutate(
+  V5_01 = case_when(V5_01 == 1 ~ 1,
+                    V5_01 == 2 ~ 0,
+                    TRUE ~ NA_real_)) 
+
 # Creación de dataframe con hogares elegibles: hogares con menores que no trabajan o hijos discapacitados
 # y jefes elegibles
 hogares <- datos %>%
   group_by(CODUSU, NRO_HOGAR, trimestre_base) %>%
   summarise(
-    menor_elegible_hogar = max(menor_elegible, na.rm = TRUE), # Uso max porque toma si hay al menos uno
-    discapacitado_hogar = max(discapacitado, na.rm = TRUE), 
-    jefe_elegible_hogar = max(jefe_elegible, na.rm = TRUE),
+    # El hogar tiene al menos un hijo o hijastro menor que no trabaja
+    menor_elegible_hogar = as.integer(
+      any(menor_elegible == 1, na.rm = TRUE)),
+    # El hogar tiene al menos un hijo o hijastro con discapacidad
+    discapacitado_hogar = as.integer(
+      any(discapacitado == 1, na.rm = TRUE)),
+    # El jefe cumple las condiciones laborales y no cobra jubilación o pensión
+    jefe_no_jubilado_hogar = as.integer(
+      any(jefe_no_jubilado == 1, na.rm = TRUE)),
+    # Al menos un integrante del hogar reporta cobrar AUH
+    recibe_auh_hogar = as.integer(
+      any(V5_01 == 1, na.rm = TRUE)
+    ),
     .groups = "drop"
   ) %>%
-  mutate( # Ver si el hogar es elegible o no
-    elegible = ifelse((menor_elegible_hogar == 1|discapacitado_hogar == 1) & jefe_elegible_hogar == 1, 1, 0)
-  )
+  mutate(
+    # El hogar es potencialmente elegible
+    elegible = ifelse(
+      (menor_elegible_hogar == 1 | discapacitado_hogar == 1) &
+        jefe_no_jubilado_hogar == 1, 1, 0))
 
 # Le agrego a los hogares correctos (por trimestre, código de usuario y 
 # número de hogar) su "elegibilidad" correspondiente
@@ -190,14 +219,10 @@ datos <- datos %>%
     TRUE ~ NA_character_
   ))
 
-datos <- datos %>% mutate(
-  V5_01 = case_when(V5_01 == 1 ~ 1,
-                    V5_01 == 2 ~ 0,
-                    TRUE ~ NA_real_)) # Variable binaria para recepción de AUH
-
-# Creo una muestra solamente con las personas elegibles
+# Creo una muestra con una fila por hogar potencialmente elegible
 datos_elegibles <- datos %>%
-  filter(elegible == 1)
+  filter(
+    elegible == 1)
 ```
 
 ## Estadística descriptiva
@@ -252,19 +277,20 @@ ggsave(
 
 ```
 
-Gráfico de torta de recepción de la AUH dentro de los individuos elegibles.
+Gráfico de torta de recepción de la AUH dentro de los hogares con individuos elegibles.
 
 ```{r}
 torta_auh <- datos_elegibles %>%
+  distinct(CODUSU, NRO_HOGAR, trimestre_base, .keep_all = TRUE) %>%
   mutate(
     cobertura = case_when(
-      V5_01 == 1 ~ "Recibe AUH",
-      V5_01 == 0 ~ "No recibe AUH"
+      recibe_auh_hogar == 1 ~ "Recibe AUH",
+      recibe_auh_hogar == 0 ~ "No recibe AUH"
     )
   ) %>%
   group_by(cobertura) %>%
   summarise(
-    total = sum(PONDERA.x, na.rm = TRUE),
+    total = sum(PONDERA.y, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   mutate(
@@ -310,7 +336,7 @@ grafico_torta <- ggplot(
   ) +
 
   labs(
-    title = "Cobertura de AUH dentro de la población elegible",
+    title = "Cobertura de AUH dentro de los hogares elegibles",
     subtitle = "EPH 2025, muestra ponderada",
     fill = NULL
   ) +
@@ -340,15 +366,21 @@ ggsave(
 
 ```
 
-Tasa de cobertura de la AUH agrupada por aglomerado aplicada a la muestra de individuos elegibles.
+Tasa de cobertura de la AUH agrupada por aglomerado aplicada a la muestra de hogares con individuos elegibles.
 
 ```{r}
 # Gráfico para la muestra de individuos elegibles
 tabla_cobertura_elegibles <- datos_elegibles %>%
+  distinct(CODUSU, NRO_HOGAR, trimestre_base, .keep_all = TRUE) %>%
   group_by(AGLOMERADO.x) %>%
   summarise(
     Observaciones = n(),
-    Cobertura_auh = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100 # Ponderado
+    Cobertura_auh = weighted.mean(
+      recibe_auh_hogar == 1,
+      w = PONDERA.y,
+      na.rm = TRUE
+    ) * 100,
+    .groups = "drop"
   ) %>%
   arrange(desc(Cobertura_auh))
 
@@ -368,7 +400,7 @@ grafico_cobertura_elegibles <- ggplot(
     high = "#27AE60"
   ) +
   labs(
-    title = "Cobertura de AUH por aglomerado (población elegible)",
+    title = "Cobertura de AUH por aglomerado (hogares elegibles)",
     subtitle = "Mayor cobertura en verde, menor en rojo",
     x = "Aglomerado",
     y = "Cobertura AUH (%)",
@@ -393,13 +425,18 @@ ggsave(
 
 ```
 
-Tasa de cobertura a lo largo de los trimestres de 2025 de la AUH agrupada por aglomerado aplicada a la muestra de individuos elegibles.
+Tasa de cobertura a lo largo de los trimestres de 2025 de la AUH agrupada por aglomerado aplicada a la muestra de hogares con individuos elegibles.
 
 ```{r}
 tabla_longitudinal_elegibles <- datos_elegibles %>%
+  distinct(CODUSU, NRO_HOGAR, trimestre_base, .keep_all = TRUE) %>%
   group_by(AGLOMERADO.x, trimestre_base) %>%
   summarise(
-    cobertura = weighted.mean(V5_01 == 1, w = PONDERA.x, na.rm = TRUE) * 100,
+    cobertura = weighted.mean(
+      recibe_auh_hogar == 1,
+      w = PONDERA.y,
+      na.rm = TRUE
+    ) * 100,
     .groups = "drop"
   )
 
@@ -496,7 +533,7 @@ grafico_longitudinal_elegibles <- ggplot() +
   ) +
   labs(
    title = "Evolución de la cobertura de AUH por aglomerado",
-   subtitle = "Población elegible, 2025",
+   subtitle = "Hogares elegibles, 2025",
     x = "Trimestre",
    y = "Cobertura (%)",
    color = "Cobertura\npromedio",
@@ -529,13 +566,18 @@ ggsave(
 
 ```
 
-Tabla de exclusión: tasa de personas elegibles excluidas de la AUH agrupada por aglomerado.
+Tabla de exclusión: tasa de hogares elegibles excluidos de la AUH agrupada por aglomerado.
 
 ```{r}
 tabla_exclusion <- datos_elegibles %>%
+  distinct(CODUSU, NRO_HOGAR, trimestre_base, .keep_all = TRUE) %>%
   group_by(AGLOMERADO.x) %>%
   summarise(
-    exclusion = weighted.mean(V5_01 != 1, w = PONDERA.x, na.rm = TRUE) * 100,
+    exclusion = weighted.mean(
+      recibe_auh_hogar == 0,
+      w = PONDERA.y,
+      na.rm = TRUE
+    ) * 100,
     .groups = "drop"
   ) %>%
   arrange(desc(exclusion))
@@ -590,26 +632,33 @@ ggsave(
 Realizamos un modelo logit que incluye como variables explicativas potenciales diferentes explicaciones posibles: características demográficas (sexo del jefe de hogar, tamaño y composición del hogar), socioeconómicas (nivel educativo, ingreso per cápita familiar, situación de tenencia de la vivienda, condición de vulnerabilidad habitacional) y geográficas (región y aglomerado). No utilizamos el ponderador debido a que al trabajar a nivel hogar y con una submuestra de elegibles, PONDERA generaba inestabilidad numérica y no es necesario para identificar asociaciones y patrones predictivos.
 
 ```{r}
-datos_elegibles <- datos_elegibles %>% 
-  mutate(
-    sexo_jefe = ifelse(CH04 == 2, 1, 0)
-  )
-
 base_logit <- datos_elegibles %>%
   group_by(CODUSU, NRO_HOGAR, trimestre_base) %>%
   summarise(
-    recibe_auh = as.integer(any(V5_01 == 1, na.rm = TRUE)),
-    sexo_jefe = first(CH04),  # Primer valor que aparezca de las siguientes variables
-    educ_jefe = first(NIVEL_ED),
-    aglomerado = first(AGLOMERADO.x),
-    tam_hogar = n(),
-    cant_menores = sum(CH06 < 18, na.rm = TRUE),
-    monoparental = as.integer(
-      sum(CH06 < 18, na.rm = TRUE) > 0 &
-      sum(CH03== 2, na.rm = TRUE) == 0
+    # Variable dependiente: el hogar reporta cobrar AUH
+    recibe_auh = first(recibe_auh_hogar),
+    # Características del jefe o jefa
+    sexo_jefe = as.integer(
+      first(CH04[CH03 == 1], default = NA_real_) == 2
     ),
-    # Socioeconómicas
-    ingreso_per_capita_familiar = first(IPCF.x), # Ingreso per
+    educ_jefe = first(
+      NIVEL_ED[CH03 == 1],
+      default = NA_real_
+    ),
+    # Variable territorial
+    aglomerado = first(AGLOMERADO.x),
+    # Composición del hogar
+    tam_hogar = n_distinct(COMPONENTE),
+    cant_menores = sum(
+      as.numeric(CH06) < 18,
+      na.rm = TRUE
+    ),
+    monoparental = as.integer(
+      sum(as.numeric(CH06) < 18, na.rm = TRUE) > 0 &
+        !any(CH03 == 2, na.rm = TRUE)
+    ),
+    # Variables socioeconómicas del hogar
+    ingreso_per_capita_familiar = first(IPCF.x),
     tenencia_vivienda = first(II7),
     .groups = "drop"
   )
